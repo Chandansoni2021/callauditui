@@ -1,0 +1,27 @@
+@import "tailwindcss";
+  
+  * {
+    scroll-behavior: smooth;
+  }
+  
+  /* Basic layout styles */
+.app-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+.main-content {
+  flex: 1;
+  transition: margin-left 0.3s ease;
+}
+
+/* Ensure the app fills the viewport */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.app {
+  height: 100%;
+}

@@ -12,6 +12,8 @@ import {
   FaChevronLeft,
   FaChevronRight,
   FaUserShield,
+  FaFileInvoiceDollar ,
+
   FaBell,
   FaTrash
 } from "react-icons/fa";
@@ -39,10 +41,10 @@ const Navbar = ({
 
   const navItems = [
     { path: "/admin", icon: <FaHome className="w-3 h-3 text-gray-700" />, label: "Admin" },
-    { path: "/call-summary", icon: <FaPhone className="w-3 h-3 text-gray-700" />, label: "Call Summary" },
     { path: "/call-analysis", icon: <FaChartBar className="w-3 h-3 text-gray-700" />, label: "Call Analysis" },
     { path: "/upload-documents", icon: <FaCloudUploadAlt className="w-3 h-3 text-gray-700" />, label: "Upload Data" },
     { path: "/upload-audio", icon: <FaUserShield className="w-3 h-3 text-gray-700" />, label: "Upload audio" },
+    { path: "/Billing", icon: <FaFileInvoiceDollar className="w-3 h-3 text-gray-700" />, label: "Usage & Billing Dashboard" }
   ];
 
   useEffect(() => {
@@ -54,63 +56,6 @@ const Navbar = ({
     if (savedClearedNotifs) {
       clearedNotifIds.current = new Set(JSON.parse(savedClearedNotifs));
     }
-  }, []);
-
-  const fetchNotifications = async () => {
-    try {
-      const res = await fetch("http://ec2-34-239-0-254.compute-1.amazonaws.com:8000/get_notifications");
-      const data = await res.json();
-
-      if (data.success) {
-        const now = new Date();
-
-        // Filter out cleared notifications and future notifications
-        const filteredNotifs = data.notifications.filter(n => {
-          const scheduledTime = new Date(n.scheduled_time);
-          return !clearedNotifIds.current.has(n._id) && scheduledTime <= now;
-        });
-
-        // Find new notifications that haven't been shown yet
-        const newOnes = filteredNotifs.filter(n => !clearedNotifIds.current.has(n._id));
-
-        if (newOnes.length > 0) {
-          const latest = newOnes[0];
-          setLatestPopupMessage(latest.message);
-          setHasNewNotification(true);
-          
-          if (audioRef.current) {
-            audioRef.current.play().catch(e => console.log("Audio play failed:", e));
-          }
-        }
-
-        setNotifications(filteredNotifs);
-      }
-    } catch (error) {
-      console.error("Error fetching notifications:", error);
-    }
-  };
-
-  const clearAllNotifications = () => {
-    // Add all current notification IDs to cleared set
-    const newClearedNotifs = new Set(clearedNotifIds.current);
-    notifications.forEach(notif => {
-      newClearedNotifs.add(notif._id);
-    });
-    clearedNotifIds.current = newClearedNotifs;
-    
-    // Save to localStorage
-    localStorage.setItem('clearedNotifIds', JSON.stringify([...clearedNotifIds.current]));
-    
-    setNotifications([]);
-    setHasNewNotification(false);
-    setLatestPopupMessage(null);
-    setIsNotifOpen(false);
-  };
-
-  useEffect(() => {
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 10000);
-    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -136,7 +81,7 @@ const Navbar = ({
       const refreshToken = localStorage.getItem("refresh_token");
 
       if (accessToken && refreshToken) {
-        await fetch("http://ec2-34-239-0-254.compute-1.amazonaws.com:8000/logout", {
+        await fetch("http://127.0.0.1:8000/logout", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${accessToken}`,
@@ -177,9 +122,7 @@ const Navbar = ({
               aria-label="Toggle sidebar"
             >
               {isSidebarOpen ? <FaTimes size={20} /> : <FaBars size={20} />}
-            </button>
-
-            <button
+            </button>Meridian CallPro<button
               onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
               className="hidden lg:block p-2 mr-2 text-gray-600 rounded-lg cursor-pointer hover:bg-gray-100"
               aria-label="Collapse sidebar"
@@ -189,7 +132,7 @@ const Navbar = ({
 
             <Link to="/" className="flex items-center">
               {!isSidebarCollapsed && (
-                <span className="text-xl font-semibold text-gray-800 whitespace-nowrap">Audify.AI</span>
+                <span className="text-xl font-semibold text-gray-800 whitespace-nowrap"></span>
               )}
             </Link>
           </div>

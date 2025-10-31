@@ -11,13 +11,14 @@ import {
 import Navbar from "./Component/Navbar";
  
 // Lazy loaded components
-const CallSummary = lazy(() => import("./Products/CallSummary"));
+
+const Billing = lazy(() => import("./Products/Billing"));
 const CallAnalysis = lazy(() => import("./Products/CallAnalysis"));
 const Admin = lazy(() => import("./Admin/Admin"));
 const HomePage = lazy(() => import("./Products/HomePage"));
 const CallEvaluation = lazy(() => import("./Evalution/CallEvalution"));
 const UploadDocumentsPopup = lazy(() => import("./Products/UploadDocumentsPopup"));
-// const LoginPage = lazy(() => import("./LandingPage/LoginPage"));
+const LoginPage = lazy(() => import("./LandingPage/LoginPage"));
 const LandingPage = lazy(() => import("./Pages/LandingPage"));
  
 // Layout for protected routes
@@ -63,10 +64,9 @@ function App() {
   );
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  // const [isLoginOpen, setIsLoginOpen] = useState(false);
  
   const navigate = useNavigate();
-  const location = useLocation(); // 🧠 Get current route path
+  const location = useLocation();
  
   useEffect(() => {
     let timer;
@@ -78,12 +78,16 @@ function App() {
     return () => timer && clearTimeout(timer);
   }, [showPopup]);
  
-  // const handleLogin = () => {
-  //   setIsAuthenticated(true);
-  //   localStorage.setItem('isAuthenticated', 'true');
-  //   setIsLoginOpen(false);
-  //   navigate("/dashboard");
-  // };
+  const handleLogin = (authenticated = true) => {
+    setIsAuthenticated(authenticated);
+    if (authenticated) {
+      localStorage.setItem('isAuthenticated', 'true');
+      navigate("/admin");
+    } else {
+      localStorage.removeItem('isAuthenticated');
+      navigate("/");
+    }
+  };
  
   const handleLogout = () => {
     setIsAuthenticated(false);
@@ -98,22 +102,12 @@ function App() {
           {/* Public Routes */}
           <Route
             path="/"
-            element={
-              <LandingPage
-                
-              />
-            }
+            element={<LandingPage />}
           />
-          {/* <Route
-            path="/login"
-            element={
-              <LoginPage
-                onLogin={handleLogin}
-                isOpen={isLoginOpen}
-                setIsOpen={setIsLoginOpen}
-              />
-            }
-          /> */}
+          <Route
+            path="/LoginPage"
+            element={<LoginPage onLogin={handleLogin} />}
+          />
  
           {/* Protected Routes */}
           <Route
@@ -161,15 +155,7 @@ function App() {
                 />
               }
             />
-            <Route
-              path="/call-summary"
-              element={
-                <CallSummary
-                  key={location.pathname}
-                  isSidebarCollapsed={isSidebarCollapsed}
-                />
-              }
-            />
+          
             <Route
               path="/upload-documents"
               element={<UploadDocumentsPopup key={location.pathname} />}
@@ -177,6 +163,16 @@ function App() {
             <Route
               path="/call-evaluation/:call_id"
               element={<CallEvaluation key={location.pathname} />}
+            />
+            {/* Billing route ko ProtectedLayout ke andar move karo */}
+            <Route
+              path="/billing"
+              element={
+                <Billing
+                  key={location.pathname}
+                  isSidebarCollapsed={isSidebarCollapsed}
+                />
+              }
             />
           </Route>
  
@@ -192,5 +188,3 @@ function App() {
 }
  
 export default App;
- 
- 

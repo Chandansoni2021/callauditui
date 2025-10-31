@@ -8,12 +8,75 @@ const Tabs = ({ call_id, isSidebarCollapsed }) => {
   const [error, setError] = useState(null);
   const [isSendingFeedback, setIsSendingFeedback] = useState(false);
   const [feedbackStatus, setFeedbackStatus] = useState(null);
-  const [agentName, setAgentName] = useState("");
 
+  // Function to extract phone numbers from the nested structure
+  const extractPhoneNumbers = (phoneData) => {
+    if (!phoneData) return "No phone numbers available";
+    
+    try {
+      // If it's an array of phone number objects
+      if (Array.isArray(phoneData)) {
+        const validNumbers = phoneData
+          .filter(item => item.number && item.number !== "discussed" && item.number !== "not provided")
+          .map(item => ({
+            number: item.number,
+            type: item.type || 'unknown',
+            context: item.context || ''
+          }));
+        
+        if (validNumbers.length === 0) {
+          return "No valid phone numbers found";
+        }
+        
+        // Return formatted phone numbers
+        return validNumbers.map(phone => 
+          `${phone.number} (${phone.type})`
+        ).join(', ');
+      }
+      
+      // If it's a simple string (fallback)
+      if (typeof phoneData === 'string' && phoneData !== "not provided") {
+        return phoneData;
+      }
+      
+      return "No phone numbers available";
+    } catch (error) {
+      console.error("Error parsing phone numbers:", error);
+      return "Error loading phone numbers";
+    }
+  };
 
-    // Add the handleSendFeedback function here
+  // Function to get primary company number
+  const getCompanyNumber = (phoneData) => {
+    if (!phoneData || !Array.isArray(phoneData)) return null;
+    
+    const companyNumber = phoneData.find(item => 
+      item.type === "company_number" && 
+      item.number && 
+      item.number !== "discussed" && 
+      item.number !== "not provided"
+    );
+    
+    return companyNumber ? companyNumber.number : null;
+  };
+
+  // Function to get student number
+  const getStudentNumber = (phoneData) => {
+    if (!phoneData || !Array.isArray(phoneData)) return null;
+    
+    const studentNumber = phoneData.find(item => 
+      item.type === "student_number" && 
+      item.number && 
+      item.number !== "discussed" && 
+      item.number !== "not provided"
+    );
+    
+    return studentNumber ? studentNumber.number : null;
+  };
+
+  // Add the handleSendFeedback function here
   const handleSendFeedback = async () => {
-    if (!agentName) {
+    if (!callData?.Call_Metadata?.Agent_Name || callData.Call_Metadata.Agent_Name === "not provided") {
       setFeedbackStatus({ type: "error", message: "No agent name found to send feedback" });
       return;
     }
@@ -25,7 +88,7 @@ const Tabs = ({ call_id, isSidebarCollapsed }) => {
       const accessToken = localStorage.getItem("access_token");
       if (!accessToken) throw new Error("Access token not found.");
 
-      const response = await fetch("http://ec2-34-239-0-254.compute-1.amazonaws.com:8000/audit-call/", {
+      const response = await fetch("http://127.0.0.1:8000/audit-call/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -33,7 +96,7 @@ const Tabs = ({ call_id, isSidebarCollapsed }) => {
         },
         body: JSON.stringify({
           call_id: call_id,
-          agent_name: agentName,
+          agent_name: callData.Call_Metadata.Agent_Name,
           qa_pairs: qaPairs
         }),
       });
@@ -59,6 +122,7 @@ const Tabs = ({ call_id, isSidebarCollapsed }) => {
       setIsSendingFeedback(false);
     }
   };
+
   useEffect(() => {
     if (!call_id) return;
 
@@ -67,47 +131,27 @@ const Tabs = ({ call_id, isSidebarCollapsed }) => {
       setError(null);
 
       try {
-        const response = await fetch("http://ec2-34-239-0-254.compute-1.amazonaws.com:8000/get-call-details/", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            call_id: call_id
-          }),
-        });
-
+        const response = await fetch(`http://127.0.0.1:8000/get-all-call-details?call_id=${call_id}`);
+       
         if (!response.ok) {
           const errorData = await response.json();
           throw new Error(errorData.detail || `Error: ${response.status}`);
         }
 
         const result = await response.json();
-        
-        if (result.data) {
-          setCallData(result.data);
-          
-          // Extract agent name
-          if (result.data.summary?.Sales_Agent?.Name) {
-            setAgentName(result.data.summary.Sales_Agent.Name);
-          } else if (result.data.transcription) {
-            const transcript = result.data.transcription;
-            const lines = transcript.split("\n").slice(0, 5);
-            for (const line of lines) {
-              if (line.includes("This is") && line.includes("from")) {
-                const nameMatch = line.match(/This is (\w+) from/);
-                if (nameMatch && nameMatch[1]) {
-                  setAgentName(nameMatch[1]);
-                  break;
-                }
-              }
-            }
-          }
-          
+       
+        if (result.call_audit_details && result.call_audit_details.length > 0) {
+          const callDetails = result.call_audit_details[0];
+          setCallData(callDetails);
+         
           // Parse Q/A pairs
-          if (result.data.QA_Pairs && result.data.QA_Pairs !== "Not Provided") {
+          if (callDetails.QA_pairs && callDetails.QA_pairs !== "[]") {
             try {
-              const parsedQaPairs = JSON.parse(result.data.QA_Pairs);
+              // Handle both stringified JSON and direct array
+              let parsedQaPairs = callDetails.QA_pairs;
+              if (typeof parsedQaPairs === 'string') {
+                parsedQaPairs = JSON.parse(parsedQaPairs);
+              }
               setQaPairs(Array.isArray(parsedQaPairs) ? parsedQaPairs : []);
             } catch (e) {
               console.error("Failed to parse QA pairs:", e);
@@ -130,72 +174,105 @@ const Tabs = ({ call_id, isSidebarCollapsed }) => {
     fetchCallDetails();
   }, [call_id]);
 
+  // Fixed height container for all tabs content
+  const tabContentStyle = {
+    height: 'calc(100vh - 200px)', // Adjust this value as per your needs
+    minHeight: '500px',
+    overflowY: 'auto'
+  };
+
   const renderSummary = () => {
-    if (!callData?.summary) {
+    if (!callData?.Call_Summary) {
       return (
-        <div className="text-center p-6 rounded-xl bg-gradient-to-br from-blue-50 to-purple-50 border border-gray-200">
-          <svg className="w-12 h-12 mx-auto text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <h4 className="text-lg font-medium text-gray-600 mt-3">No Summary Available</h4>
-          <p className="text-sm text-gray-400">Call summary will appear here</p>
+        <div className="text-center p-8 rounded-2xl bg-gradient-to-br from-blue-50 to-purple-50 border-2 border-dashed border-blue-200 h-full flex items-center justify-center">
+          <div>
+            <div className="w-20 h-20 mx-auto bg-gradient-to-r from-blue-100 to-purple-100 rounded-full flex items-center justify-center mb-4">
+              <svg className="w-10 h-10 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h4 className="text-xl font-bold text-gray-700 mb-2">No Summary Available</h4>
+            <p className="text-gray-500">Call summary will appear here once generated</p>
+          </div>
         </div>
       );
     }
 
-    const summary = callData.summary;
+    const summary = callData.Call_Summary;
 
     return (
-      <div className="bg-white/90 backdrop-blur-sm rounded-xl p-5 shadow-sm border border-gray-200/50">
-        <div className="flex items-center mb-4">
-          <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg w-8 h-8 flex items-center justify-center mr-3">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100 h-full overflow-y-auto">
+        <div className="flex items-center mb-6">
+          <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl w-12 h-12 flex items-center justify-center mr-4 shadow-lg">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           </div>
-          <h3 className="text-lg font-bold text-gray-800">Call Summary</h3>
-        </div>
-
-        {/* Summary Points */}
-        {summary.Summary && Array.isArray(summary.Summary) && (
-          <ul className="space-y-3 mb-6">
-            {summary.Summary.map((item, index) => (
-              <li key={index} className="flex items-start">
-                <div className="flex-shrink-0 mt-1">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                </div>
-                <p className="ml-3 text-gray-700">
-                  {item.replace(/^[•\-]\s*/, '')}
-                </p>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {/* Overall Sentiment */}
-        <div className="bg-blue-50 p-4 rounded-lg mb-4">
-          <h4 className="text-sm font-bold text-blue-600 mb-2">Overall Sentiment</h4>
-          <div className="flex items-center">
-            <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-              summary.Overall_Customer_Sentiment === "Positive" 
-                ? "bg-green-100 text-green-800" 
-                : summary.Overall_Customer_Sentiment === "Negative" 
-                  ? "bg-red-100 text-red-800" 
-                  : "bg-gray-100 text-gray-800"
-            }`}>
-              {summary.Overall_Customer_Sentiment || "Neutral"}
-            </span>
-            <span className="ml-2 text-sm text-gray-600">
-              ({summary.Overall_Customer_Emotion || "No emotion detected"})
-            </span>
+          <div>
+            <h3 className="text-2xl font-bold text-gray-800">Call Summary</h3>
+            <p className="text-gray-600">AI-generated overview of the conversation</p>
           </div>
         </div>
 
-        {/* Purpose of Call */}
-        {summary.Purpose_of_call && (
-          <div className="bg-purple-50 p-4 rounded-lg">
-            <h4 className="text-sm font-bold text-purple-600 mb-2">Purpose of Call</h4>
-            <p className="text-gray-700">{summary.Purpose_of_call}</p>
+        {/* Summary Points */}
+        {summary.Summary_Bullet_Points && Array.isArray(summary.Summary_Bullet_Points) && (
+          <div className="space-y-4 mb-8">
+            <h4 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
+              <div className="w-2 h-2 bg-blue-500 rounded-full mr-3"></div>
+              Key Conversation Points
+            </h4>
+            <div className="grid gap-3">
+              {summary.Summary_Bullet_Points.map((item, index) => (
+                <div key={index} className="flex items-start p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
+                  <div className="flex-shrink-0 mt-1 mr-4">
+                    <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse"></div>
+                  </div>
+                  <p className="text-gray-700 leading-relaxed">
+                    {item.replace(/^[•\-]\s*/, '')}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Overall Score */}
+        {callData.Scores && (
+          <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-6 rounded-2xl border border-green-200 mb-6">
+            <h4 className="text-lg font-semibold text-green-800 mb-4 flex items-center">
+              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+              </svg>
+              Performance Score
+            </h4>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-4xl font-bold text-green-600">
+                  {callData.Scores.TotalScore}/10
+                </div>
+                <div className={`text-lg font-semibold mt-1 ${
+                  callData.Scores.Category === "Excellent" ? "text-green-600" :
+                  callData.Scores.Category === "Average" ? "text-yellow-600" : "text-red-600"
+                }`}>
+                  {callData.Scores.Category}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-sm text-gray-600">Breakdown</div>
+                <div className="text-sm text-gray-700">
+                  Professionalism: {callData.Scores.Professionalism}/10
+                </div>
+                <div className="text-sm text-gray-700">
+                  Product Knowledge: {callData.Scores.Product_Knowledge}/10
+                </div>
+                <div className="text-sm text-gray-700">
+                  Communication: {callData.Scores.Communication_Skills}/10
+                </div>
+                <div className="text-sm text-gray-700">
+                  Problem Solving: {callData.Scores.Problem_Solving}/10
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -203,35 +280,63 @@ const Tabs = ({ call_id, isSidebarCollapsed }) => {
   };
 
   const renderTranscript = () => {
-    if (!callData?.transcription) {
-      return <p className="text-gray-500 italic">No transcript available</p>;
+    if (!callData?.Transcript) {
+      return (
+        <div className="text-center p-8 rounded-2xl bg-gradient-to-br from-gray-50 to-blue-50 border-2 border-dashed border-gray-300 h-full flex items-center justify-center">
+          <div>
+            <div className="w-16 h-16 mx-auto bg-gray-200 rounded-full flex items-center justify-center mb-4">
+              <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+              </svg>
+            </div>
+            <h4 className="text-lg font-semibold text-gray-600 mb-2">No Transcript Available</h4>
+            <p className="text-gray-500">Call transcript is not available for this call</p>
+          </div>
+        </div>
+      );
     }
 
-    const lines = callData.transcription.split("\n")
+    const lines = callData.Transcript.split("\n")
       .filter(line => line.trim().length > 0);
 
     if (lines.length === 0) {
-      return <p className="text-gray-500 italic">No transcript content</p>;
+      return (
+        <div className="h-full flex items-center justify-center">
+          <p className="text-gray-500 italic">No transcript content available</p>
+        </div>
+      );
     }
 
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 h-full overflow-y-auto p-4 bg-gray-50 rounded-2xl">
         {lines.map((line, index) => {
-          const isAgent = line.includes(agentName) || 
-                         (line.includes("This is") && line.includes("from")) ||
-                         line.startsWith("Agent:");
+          const isAgent = line.includes("Agent:") || line.includes("Executive:") ||
+                         (line.includes("This is") && line.includes("from"));
 
           return (
-            <div 
-              key={index} 
+            <div
+              key={index}
               className={`flex ${isAgent ? "justify-start" : "justify-end"}`}
             >
-              <div className={`max-w-xs md:max-w-md lg:max-w-lg p-3 rounded-lg ${
-                isAgent 
-                  ? "bg-gray-100 text-gray-800 rounded-bl-none" 
-                  : "bg-blue-600 text-white rounded-br-none"
+              <div className={`max-w-xs md:max-w-md lg:max-w-lg p-4 rounded-2xl shadow-sm ${
+                isAgent
+                  ? "bg-white text-gray-800 rounded-bl-none border border-gray-200"
+                  : "bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-br-none shadow-md"
               }`}>
-                <p>{line}</p>
+                <div className="flex items-center mb-1">
+                  {isAgent ? (
+                    <>
+                      <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
+                      <span className="text-xs font-semibold text-green-600">Agent</span>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-2 h-2 bg-purple-400 rounded-full mr-2"></div>
+                      <span className="text-xs font-semibold text-purple-200">Student</span>
+                    </>
+                  )}
+                </div>
+                <p className="text-sm leading-relaxed">{line}</p>
               </div>
             </div>
           );
@@ -241,435 +346,436 @@ const Tabs = ({ call_id, isSidebarCollapsed }) => {
   };
 
   const renderKeyDetails = () => {
-    if (!callData?.summary) {
-      return <p className="text-gray-500 italic">No details available</p>;
+    if (!callData) {
+      return (
+        <div className="h-full flex items-center justify-center">
+          <p className="text-gray-500 italic">No details available</p>
+        </div>
+      );
     }
 
-    const summary = callData.summary;
-    const customer = summary.Customer || {};
+    // Extract phone numbers
+    const phoneNumbers = callData.Call_Metadata?.Phone_Numbers;
+    const formattedPhoneNumbers = extractPhoneNumbers(phoneNumbers);
+    const companyNumber = getCompanyNumber(phoneNumbers);
+    const studentNumber = getStudentNumber(phoneNumbers);
 
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Customer Section */}
-        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-          <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center">
-            <svg className="w-5 h-5 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-            Customer Information
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full overflow-y-auto">
+        {/* Student Information */}
+        <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100">
+          <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
+            <div className="w-3 h-3 bg-blue-500 rounded-full mr-3"></div>
+            Student Information
           </h3>
-          
-          <div className="space-y-3">
-            {customer.Name && (
-              <div>
-                <p className="text-xs text-gray-500">Name</p>
-                <p className="font-medium">{customer.Name}</p>
-              </div>
-            )}
-            {customer.Email && (
-              <div>
-                <p className="text-xs text-gray-500">Email</p>
-                <a href={`mailto:${customer.Email}`} className="font-medium text-blue-600 hover:underline">
-                  {customer.Email}
-                </a>
-              </div>
-            )}
-            {customer.Contact_Details && (
-              <div>
-                <p className="text-xs text-gray-500">Phone</p>
-                <p className="font-medium">{customer.Contact_Details}</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Call Details Section */}
-        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-          <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center">
-            <svg className="w-5 h-5 mr-2 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-            </svg>
-            Call Details
-          </h3>
-          
-          <div className="space-y-3">
-            <div>
-              <p className="text-xs text-gray-500">Duration</p>
-              <p className="font-medium">{callData.call_duration || "N/A"} minutes</p>
+         
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-3 bg-blue-50 rounded-xl">
+              <span className="text-sm font-medium text-blue-700">Name</span>
+              <span className="font-semibold text-gray-800">{callData.Call_Metadata.Student_Name}</span>
             </div>
-            
-            <div>
-              <p className="text-xs text-gray-500">Quality</p>
-              <p className="font-medium">{summary.Call_Quality || "Not rated"}</p>
+           
+            {/* Enhanced Phone Numbers Display */}
+            <div className="space-y-3">
+              {/* Main Phone Display */}
+              <div className="flex items-center justify-between p-3 bg-green-50 rounded-xl">
+                <span className="text-sm font-medium text-green-700">Phone Numbers</span>
+                <span className="font-semibold text-gray-800 text-right">
+                  {formattedPhoneNumbers}
+                </span>
+              </div>
+
+              {/* Detailed Phone Breakdown */}
+              {companyNumber && (
+                <div className="flex items-center justify-between p-3 bg-blue-50 rounded-xl">
+                  <span className="text-sm font-medium text-blue-700">Company Number</span>
+                  <span className="font-semibold text-gray-800">{companyNumber}</span>
+                </div>
+              )}
+
+              {studentNumber && (
+                <div className="flex items-center justify-between p-3 bg-purple-50 rounded-xl">
+                  <span className="text-sm font-medium text-purple-700">Student Number</span>
+                  <span className="font-semibold text-gray-800">{studentNumber}</span>
+                </div>
+              )}
             </div>
-            
-            <div>
-              <p className="text-xs text-gray-500">User Satisfaction</p>
-              <p className="font-medium">{summary.User_Satisfaction === "Yes" ? "Satisfied" : "Not Satisfied"}</p>
+           
+            <div className="flex items-center justify-between p-3 bg-purple-50 rounded-xl">
+              <span className="text-sm font-medium text-purple-700">Date of Birth</span>
+              <span className="font-semibold text-gray-800">{callData.Eligibility.DOB}</span>
             </div>
-            
-            {summary.follow_up_call && (
-              <div>
-                <p className="text-xs text-gray-500">Follow-up Scheduled</p>
-                <p className="font-medium">{new Date(summary.follow_up_call).toLocaleString()}</p>
-              </div>
-            )}
+           
+            <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-xl">
+              <span className="text-sm font-medium text-yellow-700">Qualification</span>
+              <span className="font-semibold text-gray-800">{callData.Eligibility.Qualification_Stream}</span>
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-blue-50 rounded-xl">
+              <span className="text-sm font-medium text-pink-700">Next plan</span>
+              <span className="font-semibold text-gray-800">{callData.Call_Metadata.Next_Plan}</span>
+            </div>
+           
+            <div className="flex items-center justify-between p-3 bg-red-50 rounded-xl">
+              <span className="text-sm font-medium text-red-700">Eligibility</span>
+              <span className={`font-semibold ${
+                callData.Eligibility.Was_Student_Eligible === "Yes" ? "text-green-600" :
+                callData.Eligibility.Was_Student_Eligible === "No" ? "text-red-600" : "text-yellow-600"
+              }`}>
+                {callData.Eligibility.Was_Student_Eligible}
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Agent Section */}
-        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-          <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center">
-            <svg className="w-5 h-5 mr-2 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-            Agent Information
+        {/* Call Information */}
+        <div className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100">
+          <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
+            <div className="w-3 h-3 bg-green-500 rounded-full mr-3"></div>
+            Call Information
           </h3>
-          
-          <div className="space-y-3">
-            {summary.Sales_Agent?.Name && (
-              <div>
-                <p className="text-xs text-gray-500">Name</p>
-                <p className="font-medium">{summary.Sales_Agent.Name}</p>
-              </div>
-            )}
-            
-            {summary.Sales_Agent?.Company && (
-              <div>
-                <p className="text-xs text-gray-500">Company</p>
-                <p className="font-medium">{summary.Sales_Agent.Company}</p>
+         
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-3 bg-blue-50 rounded-xl">
+              <span className="text-sm font-medium text-blue-700">Call ID</span>
+              <span className="font-semibold text-gray-800">{callData.call_id}</span>
+            </div>
+           
+            <div className="flex items-center justify-between p-3 bg-green-50 rounded-xl">
+              <span className="text-sm font-medium text-green-700">Agent</span>
+              <span className="font-semibold text-gray-800">{callData.Call_Metadata.Agent_Name}</span>
+            </div>
+           
+            <div className="flex items-center justify-between p-3 bg-purple-50 rounded-xl">
+              <span className="text-sm font-medium text-purple-700">Date</span>
+              <span className="font-semibold text-gray-800">{callData.Call_Metadata.Date_of_Call}</span>
+            </div>
+           
+            <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-xl">
+              <span className="text-sm font-medium text-yellow-700">Completion</span>
+              <span className={`font-semibold ${
+                callData.Call_Status.Call_Completion_Status === "True" ? "text-green-600" : "text-red-600"
+              }`}>
+                {callData.Call_Status.Call_Completion_Status === "True" ? "Completed" : "Incomplete"}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-blue-50 rounded-xl">
+              <span className="text-sm font-medium text-pink-700">Call_Purpose</span>
+              <span className="font-semibold text-gray-800">{callData.Call_Metadata.Call_Purpose}</span>
+            </div>
+           
+            <div className="flex items-center justify-between p-3 bg-red-50 rounded-xl">
+              <span className="text-sm font-medium text-red-700">Disconnected</span>
+              <span className={`font-semibold ${
+                callData.Call_Status.Call_Disconnected === "False" ? "text-green-600" : "text-red-600"
+              }`}>
+                {callData.Call_Status.Call_Disconnected === "False" ? "No" : "Yes"}
+              </span>
+            </div>
+
+            {/* Phone Number Discussions */}
+            {callData.Call_Metadata.Phone_Number_Discussions && 
+             Array.isArray(callData.Call_Metadata.Phone_Number_Discussions) && 
+             callData.Call_Metadata.Phone_Number_Discussions.length > 0 && (
+              <div className="p-3 bg-orange-50 rounded-xl">
+                <span className="text-sm font-medium text-orange-700 block mb-2">Phone Discussions</span>
+                <div className="space-y-2">
+                  {callData.Call_Metadata.Phone_Number_Discussions.map((discussion, index) => (
+                    <div key={index} className="text-sm text-gray-700">
+                      <div className="font-semibold">{discussion.context}</div>
+                      <div className="text-xs text-gray-500 mt-1">{discussion.segment}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* Next Steps Section */}
-        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-          <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center">
-            <svg className="w-5 h-5 mr-2 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-            Next Steps
+        {/* Audit Parameters */}
+        <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-lg border border-gray-100">
+          <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center">
+            <div className="w-3 h-3 bg-purple-500 rounded-full mr-3"></div>
+            Audit Parameters
           </h3>
-          
-          <div className="space-y-3">
-            {summary.Next_Steps && (
-              <div>
-                <p className="text-xs text-gray-500">Action Items</p>
-                <p className="font-medium">{summary.Next_Steps}</p>
+         
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {Object.entries(callData.Audit_Parameters).map(([key, value]) => (
+              <div key={key} className={`p-4 rounded-xl border-2 transition-all duration-300 ${
+                value === "Yes" || value === "Good" || value === "High"
+                  ? "bg-green-50 border-green-200 hover:border-green-300"
+                  : value === "No" || value === "Poor" || value === "Low"
+                  ? "bg-red-50 border-red-200 hover:border-red-300"
+                  : "bg-yellow-50 border-yellow-200 hover:border-yellow-300"
+              }`}>
+                <div className="text-sm font-medium text-gray-600 mb-2 capitalize">
+                  {key.replace(/_/g, ' ')}
+                </div>
+                <div className={`text-lg font-bold ${
+                  value === "Yes" || value === "Good" || value === "High"
+                    ? "text-green-600"
+                    : value === "No" || value === "Poor" || value === "Low"
+                    ? "text-red-600"
+                    : "text-yellow-600"
+                }`}>
+                  {value}
+                </div>
               </div>
-            )}
-            
-            {customer.Pricing_Details && (
-              <div>
-                <p className="text-xs text-gray-500">Pricing</p>
-                <p className="font-medium">{customer.Pricing_Details}</p>
-              </div>
-            )}
+            ))}
           </div>
         </div>
+      </div>
+    );
+  };
 
-        {/* Agent Performance */}
-        {summary.Sales_Agent_Score && (
-          <div className="md:col-span-2 bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-            <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center">
-              <svg className="w-5 h-5 mr-2 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+ const renderQAPairs = () => {
+    if (qaPairs.length === 0) {
+      return (
+        <div className="text-center py-12 rounded-2xl bg-gradient-to-br from-blue-50 to-purple-50 border-2 border-dashed border-blue-200 h-full flex items-center justify-center">
+          <div>
+            <div className="w-20 h-20 mx-auto bg-gradient-to-r from-blue-100 to-purple-100 rounded-full flex items-center justify-center mb-4">
+              <svg className="w-10 h-10 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              Agent Performance
-            </h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {Object.entries(summary.Sales_Agent_Score).map(([key, value]) => (
-                <div key={key} className="bg-gray-50 p-3 rounded-lg">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-sm font-medium text-gray-600 capitalize">{key.replace(/_/g, ' ')}</span>
-                    <span className={`text-sm font-bold ${
-                      value >= 8 ? 'text-green-600' :
-                      value >= 5 ? 'text-yellow-600' :
-                      'text-red-600'
-                    }`}>
-                      {value}/10
-                    </span>
+            </div>
+            <h4 className="text-xl font-bold text-gray-700 mb-2">No Q/A Analysis Available</h4>
+            <p className="text-gray-500">Question and answer analysis will appear here once processed</p>
+          </div>
+        </div>
+      );
+    }
+ 
+    return (
+      <div className="space-y-6 h-full overflow-y-auto">
+        {qaPairs.map((pair, index) => (
+          <div key={index} className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden transform hover:scale-[1.01] transition-transform duration-300">
+            {/* Header with Score */}
+            <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-white font-semibold">Question {index + 1}</h4>
+                <div className="flex items-center bg-white/20 px-3 py-1 rounded-full">
+                  <span className="text-white font-bold mr-1">Score:</span>
+                  <span className={`text-lg font-bold ${
+                    pair.score >= 7 ? 'text-green-300' :
+                    pair.score >= 4 ? 'text-yellow-300' :
+                    'text-red-300'
+                  }`}>
+                    {pair.score}/10
+                  </span>
+                </div>
+              </div>
+            </div>
+ 
+            <div className="p-6 space-y-6">
+              {/* Customer Question */}
+              <div className="bg-blue-50 p-4 rounded-xl border border-blue-200">
+                <div className="flex items-start">
+                  <div className="bg-blue-500 p-3 rounded-lg mr-4 shadow-md">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
                   </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div 
-                      className={`h-2 rounded-full ${
-                        value >= 8 ? 'bg-green-500' :
-                        value >= 5 ? 'bg-yellow-500' :
-                        'bg-red-500'
-                      }`}
-                      style={{ width: `${value * 10}%` }}
-                    ></div>
+                  <div className="flex-1">
+                    <h5 className="font-semibold text-blue-800 mb-2">Customer Question</h5>
+                    <p className="text-gray-700 leading-relaxed">{pair.customer_question}</p>
                   </div>
                 </div>
-              ))}
+              </div>
+ 
+              {/* Executive Answer */}
+              <div className="bg-green-50 p-4 rounded-xl border border-green-200">
+                <div className="flex items-start">
+                  <div className="bg-green-500 p-3 rounded-lg mr-4 shadow-md">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h5 className="font-semibold text-green-800 mb-2">Executive Answer</h5>
+                    <p className="text-gray-700 leading-relaxed">{pair.executive_answer}</p>
+                  </div>
+                </div>
+              </div>
+ 
+              {/* AI Suggested Answer */}
+              <div className="bg-purple-50 p-4 rounded-xl border border-purple-200">
+                <div className="flex items-start">
+                  <div className="bg-purple-500 p-3 rounded-lg mr-4 shadow-md">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <h5 className="font-semibold text-purple-800 mb-2">AI Suggested Answer</h5>
+                    <p className="text-gray-700 leading-relaxed">{pair.ai_answer}</p>
+                  </div>
+                </div>
+              </div>
+ 
+              {/* Analysis Section */}
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Strengths */}
+                {pair.strengths?.length > 0 && (
+                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-4 rounded-xl border border-green-200">
+                    <h5 className="font-semibold text-green-800 mb-3 flex items-center">
+                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Strengths
+                    </h5>
+                    <ul className="space-y-2">
+                      {pair.strengths.map((strength, i) => (
+                        <li key={i} className="flex items-start text-sm text-gray-700">
+                          <div className="w-2 h-2 bg-green-500 rounded-full mt-2 mr-3 flex-shrink-0"></div>
+                          {strength}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+ 
+                {/* Improvements */}
+                {pair.improvements?.length > 0 && (
+                  <div className="bg-gradient-to-br from-yellow-50 to-orange-50 p-4 rounded-xl border border-yellow-200">
+                    <h5 className="font-semibold text-yellow-800 mb-3 flex items-center">
+                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      Areas for Improvement
+                    </h5>
+                    <ul className="space-y-2">
+                      {pair.improvements.map((improvement, i) => (
+                        <li key={i} className="flex items-start text-sm text-gray-700">
+                          <div className="w-2 h-2 bg-yellow-500 rounded-full mt-2 mr-3 flex-shrink-0"></div>
+                          {improvement}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+ 
+        {/* Feedback Section */}
+        {callData?.Call_Metadata?.Agent_Name && callData.Call_Metadata.Agent_Name !== "not provided" && (
+          <div className="mt-8 p-8 bg-gradient-to-br from-blue-50 to-purple-50 rounded-2xl border-2 border-blue-200 shadow-lg">
+            <h3 className="text-2xl font-bold text-gray-800 mb-6 flex items-center justify-center">
+              <svg className="w-8 h-8 mr-3 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+              </svg>
+              Send Performance Feedback
+            </h3>
+           
+            <div className="text-center space-y-6">
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 max-w-md mx-auto">
+                <p className="text-sm font-medium text-gray-600 mb-2">Agent to Receive Feedback:</p>
+                <p className="text-2xl font-bold text-blue-600">{callData.Call_Metadata.Agent_Name}</p>
+              </div>
+ 
+              {feedbackStatus && (
+                <div className={`p-4 rounded-xl max-w-md mx-auto ${
+                  feedbackStatus.type === "success"
+                    ? "bg-green-100 text-green-800 border border-green-300"
+                    : "bg-red-100 text-red-800 border border-red-300"
+                }`}>
+                  <div className="flex items-center justify-center">
+                    {feedbackStatus.type === "success" ? (
+                      <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-6 h-6 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    )}
+                    <p className="font-semibold">{feedbackStatus.message}</p>
+                  </div>
+                </div>
+              )}
+ 
+              <button
+                onClick={handleSendFeedback}
+                disabled={isSendingFeedback}
+                className={`px-8 py-4 rounded-xl font-bold text-lg flex items-center justify-center mx-auto shadow-lg transition-all duration-300 transform hover:scale-105 ${
+                  isSendingFeedback
+                    ? "bg-blue-400 cursor-not-allowed"
+                    : "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
+                }`}
+              >
+                {isSendingFeedback ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Sending Feedback...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                    Send Performance Feedback
+                  </>
+                )}
+              </button>
+ 
+              <p className="text-sm text-gray-600 max-w-md mx-auto">
+                This will send a detailed performance analysis email to {callData.Call_Metadata.Agent_Name} with insights from the Q/A analysis above.
+              </p>
             </div>
           </div>
         )}
       </div>
     );
   };
-
-  const renderQAPairs = () => {
-    if (qaPairs.length === 0) {
-      return (
-        <div className="text-center py-8 rounded-xl bg-gradient-to-br from-blue-50 to-purple-50">
-          <div className="w-16 h-16 mx-auto bg-gradient-to-r from-blue-100 to-purple-100 rounded-full flex items-center justify-center mb-3">
-            <svg className="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <h4 className="text-lg font-medium text-gray-600">No Q/A pairs available</h4>
-          <p className="text-sm text-gray-400 mt-1">Questions and answers will appear here</p>
-        </div>
-      );
-    }
-
-    return (
-      <div className="space-y-6">
-        {qaPairs.map((pair, index) => (
-          <div key={index} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-            {/* Question Section */}
-            <div className="bg-blue-50 p-4 border-b border-blue-100">
-              <div className="flex items-start">
-                <div className="bg-blue-100 p-2 rounded-lg mr-3">
-                  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <div>
-                  <h4 className="font-semibold text-blue-800">Customer Query</h4>
-                  <p className="text-gray-700 mt-1">{pair.customer_question || "No question provided"}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Answers Section */}
-            <div className="p-4 space-y-4">
-              {/* Executive Answer */}
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <div className="flex items-start mb-2">
-                  <div className="bg-green-100 p-2 rounded-lg mr-3">
-                    <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-green-800">Executive Answer</h4>
-                    <p className="text-gray-700 mt-1">{pair.executive_answer || "No answer provided"}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* AI Answer */}
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <div className="flex items-start mb-2">
-                  <div className="bg-purple-100 p-2 rounded-lg mr-3">
-                    <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-purple-800">AI Suggested Answer</h4>
-                    <p className="text-gray-700 mt-1">{pair.ai_answer || "No AI answer provided"}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Score and Analysis */}
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  {/* Score */}
-                  <div className="flex-1 min-w-[200px]">
-                    <h4 className="font-semibold text-gray-800 mb-2">Quality Score</h4>
-                    <div className="flex items-center">
-                      <div className="w-full bg-gray-200 rounded-full h-3 mr-3">
-                        <div 
-                          className={`h-3 rounded-full ${
-                            pair.score >= 7 ? 'bg-green-500' :
-                            pair.score >= 4 ? 'bg-yellow-500' :
-                            'bg-red-500'
-                          }`}
-                          style={{ width: `${pair.score * 10}%` }}
-                        ></div>
-                      </div>
-                      <span className={`font-bold ${
-                        pair.score >= 7 ? 'text-green-600' :
-                        pair.score >= 4 ? 'text-yellow-600' :
-                        'text-red-600'
-                      }`}>
-                        {pair.score}/10
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Strengths */}
-                  {pair.strengths?.length > 0 && (
-                    <div className="flex-1 min-w-[200px]">
-                      <h4 className="font-semibold text-green-600 mb-2 flex items-center">
-                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                        Strengths
-                      </h4>
-                      <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
-                        {pair.strengths.map((strength, i) => (
-                          <li key={i}>{strength}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {/* Improvements */}
-                  {pair.improvements?.length > 0 && (
-                    <div className="flex-1 min-w-[200px]">
-                      <h4 className="font-semibold text-yellow-600 mb-2 flex items-center">
-                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                        </svg>
-                        Improvements
-                      </h4>
-                      <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
-                        {pair.improvements.map((improvement, i) => (
-                          <li key={i}>{improvement}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-
-        {/* Feedback Section */}
-        <div className="mt-8 p-6 bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl border border-blue-100">
-          <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
-            <svg className="w-5 h-5 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-            </svg>
-            Send Performance Feedback
-          </h3>
-          
-          <div className="space-y-4">
-            {agentName ? (
-              <div className="mb-4">
-                <p className="text-sm font-medium text-gray-700">Agent:</p>
-                <p className="text-lg font-semibold text-blue-600">{agentName}</p>
-              </div>
-            ) : (
-              <div className="mb-4 p-3 bg-yellow-50 text-yellow-700 rounded-lg border border-yellow-200">
-                <p>No agent name found in call details</p>
-              </div>
-            )}
-
-            {feedbackStatus && (
-              <div className={`p-4 rounded-lg ${
-                feedbackStatus.type === "success" 
-                  ? "bg-green-50 text-green-800 border border-green-200"
-                  : "bg-red-50 text-red-800 border border-red-200"
-              }`}>
-                <div className="flex items-center">
-                  {feedbackStatus.type === "success" ? (
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  ) : (
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  )}
-                  <p>{feedbackStatus.message}</p>
-                </div>
-                {feedbackStatus.details && (
-                  <div className="mt-2 text-sm bg-white/50 p-2 rounded">
-                    <p className="font-medium">Email preview:</p>
-                    <p className="text-gray-600">{feedbackStatus.details.feedback_email_preview}</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <button
-              onClick={handleSendFeedback}
-              disabled={isSendingFeedback || !agentName}
-              className={`w-full px-6 py-3 rounded-lg font-medium flex items-center justify-center ${
-                isSendingFeedback
-                  ? "bg-blue-400 cursor-not-allowed"
-                  : !agentName
-                    ? "bg-gray-400 cursor-not-allowed"
-                    : "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white shadow-md hover:shadow-lg transition-all"
-              }`}
-            >
-              {isSendingFeedback ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Sending...
-                </>
-              ) : (
-                <>
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                  Send Feedback to Agent
-                </>
-              )}
-            </button>
-
-            <p className="text-xs text-gray-500 mt-2">
-              This will send an email to {agentName || "the agent"} with performance feedback based on the Q/A pairs above.
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  };
+ 
 
   return (
     <section
-      className={`bg-white p-4 h-full flex flex-col rounded-xl mb-8 transition-all duration-300 shadow-lg ${
-        isSidebarCollapsed ? 'ml-20' : 'ml-64'
+      className={`bg-gradient-to-br from-white-50 to-white-50 p-6 h-full flex flex-col rounded-xl mb-8 transition-all duration-300 ${
+        isSidebarCollapsed ? 'ml-00' : 'ml-60'
       }`}
       style={{
-        width: isSidebarCollapsed ? 'calc(100% - 5rem)' : 'calc(100% - 16rem)'
-      }}
+          marginLeft: isSidebarCollapsed ? '6rem' : '14rem',
+          width: `calc(100% - ${isSidebarCollapsed ? '6rem' : '14rem'})`,
+        }}
     >
       {/* Enhanced Tab Navigation */}
-      <div className="flex items-center justify-center mb-6">
-        <div className="relative w-full max-w-4xl bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-1 shadow-inner border border-blue-100">
+      <div className="flex items-center justify-center mb-8">
+        <div className="relative w-full max-w-4xl bg-white rounded-2xl p-2 shadow-lg border border-gray-200">
           <div className="flex">
             {["AI Summary", "Transcript", "Key Details", "Q/A Pairs"].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setSelectedTab(tab)}
-                className={`flex-1 py-3 px-4 text-sm font-medium rounded-lg relative z-10 transition-all duration-300 ${
+                className={`flex-1 py-4 px-6 text-base font-semibold rounded-xl relative z-10 transition-all duration-300 ${
                   selectedTab === tab
-                    ? "text-blue-700 bg-white shadow-md"
-                    : "text-gray-600 hover:text-blue-600"
+                    ? "text-white bg-gradient-to-r from-blue-500 to-purple-600 shadow-md"
+                    : "text-gray-600 hover:text-blue-600 hover:bg-gray-100"
                 }`}
               >
                 <div className="flex items-center justify-center">
                   {tab === "AI Summary" && (
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                   )}
                   {tab === "Transcript" && (
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                     </svg>
                   )}
                   {tab === "Key Details" && (
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                     </svg>
                   )}
                   {tab === "Q/A Pairs" && (
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   )}
@@ -682,31 +788,32 @@ const Tabs = ({ call_id, isSidebarCollapsed }) => {
       </div>
 
       {loading && (
-        <div className="flex flex-col items-center justify-center mt-6">
-          <div className="relative w-20 h-20">
+        <div className="flex flex-col items-center justify-center mt-12">
+          <div className="relative w-24 h-24 mb-6">
             <div className="absolute inset-0 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-            <div className="absolute inset-2 border-4 border-purple-500 border-b-transparent rounded-full animate-spin animation-delay-200"></div>
+            <div className="absolute inset-3 border-4 border-purple-500 border-b-transparent rounded-full animate-spin animation-delay-200"></div>
+            <div className="absolute inset-6 border-4 border-pink-500 border-l-transparent rounded-full animate-spin animation-delay-400"></div>
           </div>
-          <p className="text-gray-600 mt-4 text-lg font-semibold">Loading call details...</p>
-          <p className="text-gray-400 text-sm mt-1">This may take a moment</p>
+          <p className="text-2xl font-bold text-gray-700 mb-2">Loading Call Details</p>
+          <p className="text-gray-500 text-lg">Fetching comprehensive analysis for call ID: {call_id}</p>
         </div>
       )}
 
       {error && (
-        <div className="text-center p-6 bg-gradient-to-br from-red-50 to-pink-50 rounded-xl border border-red-100 max-w-md mx-auto">
-          <div className="w-16 h-16 mx-auto bg-gradient-to-r from-red-100 to-pink-100 rounded-full flex items-center justify-center mb-4">
-            <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="text-center p-8 bg-gradient-to-br from-red-50 to-pink-50 rounded-2xl border-2 border-red-200 max-w-2xl mx-auto shadow-lg">
+          <div className="w-20 h-20 mx-auto bg-gradient-to-r from-red-100 to-pink-100 rounded-full flex items-center justify-center mb-6">
+            <svg className="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
           </div>
-          <h3 className="text-lg font-bold text-gray-700 mb-2">Error Loading Data</h3>
-          <p className="text-red-500 mb-4">{error}</p>
+          <h3 className="text-2xl font-bold text-gray-800 mb-4">Error Loading Data</h3>
+          <p className="text-red-500 text-lg mb-6">{error}</p>
           <button
             onClick={() => window.location.reload()}
-            className="px-5 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg hover:shadow-md transition-all"
+            className="px-8 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl hover:shadow-xl transition-all transform hover:scale-105 font-semibold"
           >
             <span className="flex items-center">
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
               Try Again
@@ -716,7 +823,7 @@ const Tabs = ({ call_id, isSidebarCollapsed }) => {
       )}
 
       {!loading && !error && callData && (
-        <div className="mt-2 flex-1 overflow-y-auto">
+        <div className="mt-4 flex-1" style={tabContentStyle}>
           {selectedTab === "AI Summary" && renderSummary()}
           {selectedTab === "Transcript" && renderTranscript()}
           {selectedTab === "Key Details" && renderKeyDetails()}

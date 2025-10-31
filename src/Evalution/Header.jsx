@@ -21,7 +21,7 @@
 //       }
  
 //       try {
-//         const response = await fetch("http://ec2-34-239-0-254.compute-1.amazonaws.com:8000/header_fetch_details/", {
+//         const response = await fetch("http://127.0.0.1:8000/header_fetch_details/", {
 //           method: "POST",
 //           headers: {
 //             "Content-Type": "application/x-www-form-urlencoded",

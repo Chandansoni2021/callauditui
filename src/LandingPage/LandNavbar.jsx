@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import bluelogo from "../assets/bluelogo.png"
-
+import { useNavigate } from 'react-router-dom';
+ 
 const LandNavbar = () => {
   useEffect(() => {
     // Add wave animation class to desktop elements after component mounts
@@ -11,17 +12,19 @@ const LandNavbar = () => {
       el.classList.add('animate-wave');
     });
   }, []);
-
+ 
+  const navigate = useNavigate();
+ 
   return (
     <nav className="w-full sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16 md:h-20">
-
+ 
           {/* Logo - Left side with animation */}
           <div className="flex-shrink-0 flex items-center desktop-animate">
             <img src={bluelogo} alt="Meridian Solution" className="h-40 w-40 object-contain" />
           </div>
-
+ 
           {/* Desktop Menu - Center */}
           <div className="hidden md:flex md:items-center md:justify-center md:flex-1">
             <ul className="flex space-x-8">
@@ -38,19 +41,19 @@ const LandNavbar = () => {
               ))}
             </ul>
           </div>
-
+ 
           {/* CTA Button - Right side */}
           <div className="flex items-center">
-            <a
-              href="/login"
+            <button
+              onClick={() => navigate('/LoginPage')}
               className="desktop-animate hidden md:inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-full shadow-sm text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 hover:text-white transition-all hover:shadow-lg hover:-translate-y-0.5"
             >
               Get Started
               <svg className="ml-2 -mr-1 w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
                 <path fillRule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
               </svg>
-            </a>
-
+            </button>
+ 
             {/* Mobile menu button */}
             <button className="md:hidden text-gray-500 hover:text-gray-900 focus:outline-none">
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -60,7 +63,7 @@ const LandNavbar = () => {
           </div>
         </div>
       </div>
-
+ 
       {/* Mobile menu (hidden by default) */}
       <div className="md:hidden bg-white border-t border-gray-200">
         <div className="px-2 pt-2 pb-3 space-y-1">
@@ -73,19 +76,20 @@ const LandNavbar = () => {
               {item}
             </a>
           ))}
-          <a
-            href="/resume"
-            className="hidden md:inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-full shadow-sm text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 hover:text-white transition-all hover:shadow-lg hover:-translate-y-0.5"
+          <button
+            onClick={() => navigate('/LoginPage')}
+            className="w-full mt-3 inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-full shadow-sm text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 hover:text-white transition-all hover:shadow-lg"
           >
             Get Started
             <svg className="ml-2 -mr-1 w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
               <path fillRule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
             </svg>
-          </a>
+          </button>
         </div>
       </div>
     </nav>
   );
 };
-
+ 
 export default LandNavbar;
+ 

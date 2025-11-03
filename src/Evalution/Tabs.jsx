@@ -88,7 +88,7 @@ const Tabs = ({ call_id, isSidebarCollapsed }) => {
       const accessToken = localStorage.getItem("access_token");
       if (!accessToken) throw new Error("Access token not found.");
 
-      const response = await fetch("http://127.0.0.1:8000/audit-call/", {
+      const response = await fetch("http://65.0.95.155:8000/audit-call/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -131,7 +131,7 @@ const Tabs = ({ call_id, isSidebarCollapsed }) => {
       setError(null);
 
       try {
-        const response = await fetch(`http://127.0.0.1:8000/get-all-call-details?call_id=${call_id}`);
+        const response = await fetch(`http://65.0.95.155:8000/get-all-call-details?call_id=${call_id}`);
        
         if (!response.ok) {
           const errorData = await response.json();

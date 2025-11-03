@@ -15,6 +15,15 @@ const HomePage = () => {
   const [processingS3Files, setProcessingS3Files] = useState(false);
   const [s3Results, setS3Results] = useState(null);
   const [showS3Card, setShowS3Card] = useState(false);
+  
+  // Task status polling states - SEPARATE FOR UPLOAD AND S3
+  const [uploadTaskId, setUploadTaskId] = useState(null);
+  const [uploadTaskStatus, setUploadTaskStatus] = useState(null);
+  const [uploadPollingInterval, setUploadPollingInterval] = useState(null);
+
+  const [s3TaskId, setS3TaskId] = useState(null);
+  const [s3TaskStatus, setS3TaskStatus] = useState(null);
+  const [s3PollingInterval, setS3PollingInterval] = useState(null);
 
   // Handle file selection
   const handleFileChange = (e) => {
@@ -49,7 +58,79 @@ const HomePage = () => {
     }
   };
 
-  // Upload handler
+  // Fetch task status from backend
+  const fetchTaskStatus = async (taskId) => {
+    try {
+      const response = await axios.get(`http://65.0.95.155:8000/task-status/${taskId}`);
+      return response.data;
+    } catch (err) {
+      console.error("Error fetching task status:", err);
+      return { status: "error", error: "Failed to fetch task status" };
+    }
+  };
+
+  // Start polling for task status - UPLOAD VERSION
+  const startUploadPolling = (taskId) => {
+    // Clear any existing polling
+    if (uploadPollingInterval) {
+      clearInterval(uploadPollingInterval);
+    }
+
+    const interval = setInterval(async () => {
+      const status = await fetchTaskStatus(taskId);
+      setUploadTaskStatus(status);
+
+      // Stop polling if task is completed or errored
+      if (status.status === "completed" || status.status === "error") {
+        clearInterval(interval);
+        setUploadPollingInterval(null);
+        setUploading(false);
+        
+        if (status.status === "completed") {
+          setResponses(status.results || []);
+        } else {
+          setError(`❌ Upload processing failed: ${status.error || "Unknown error"}`);
+        }
+      }
+    }, 2000); // Poll every 2 seconds
+
+    setUploadPollingInterval(interval);
+  };
+
+  // Start polling for task status - S3 VERSION
+  const startS3Polling = (taskId) => {
+    // Clear any existing polling
+    if (s3PollingInterval) {
+      clearInterval(s3PollingInterval);
+    }
+
+    const interval = setInterval(async () => {
+      const status = await fetchTaskStatus(taskId);
+      setS3TaskStatus(status);
+
+      // Stop polling if task is completed or errored
+      if (status.status === "completed" || status.status === "error") {
+        clearInterval(interval);
+        setS3PollingInterval(null);
+        setProcessingS3Files(false);
+        
+        if (status.status === "completed") {
+          setS3Results({
+            status: "completed",
+            results: status.results,
+            processed_files: status.processed_files,
+            total_files: status.total_files
+          });
+        } else {
+          setError(`❌ S3 Processing failed: ${status.error || "Unknown error"}`);
+        }
+      }
+    }, 2000); // Poll every 2 seconds
+
+    setS3PollingInterval(interval);
+  };
+
+  // UPDATED: Upload handler with polling
   const handleUpload = async () => {
     if (files.length === 0) {
       setError("⚠️ Please select at least one audio file.");
@@ -59,24 +140,31 @@ const HomePage = () => {
     setUploading(true);
     setError("");
     setResponses([]);
+    setUploadTaskStatus(null);
 
     const formData = new FormData();
     files.forEach((file) => formData.append("files", file));
 
     try {
       const res = await axios.post(
-        "http://127.0.0.1:8000/upload-audio-s3/",
+        "http://65.0.95.155:8000/upload-audio-s3/",
         formData,
         {
           headers: { "Content-Type": "multipart/form-data" },
         }
       );
-      setResponses(res.data.processed_files || []);
+      
+      console.log("✅ Upload backend response received:", res.data);
+      
+      // Get task ID and start polling for UPLOAD
+      const taskId = res.data.task_id;
+      setUploadTaskId(taskId);
+      startUploadPolling(taskId);
+      
     } catch (err) {
-      console.error(err);
-      setError("❌ Upload failed. Please try again.");
-    } finally {
+      console.error("❌ Error uploading files:", err);
       setUploading(false);
+      setError("❌ Upload failed. Please try again.");
     }
   };
 
@@ -84,7 +172,7 @@ const HomePage = () => {
   const fetchS3Files = async () => {
     setLoadingS3Files(true);
     try {
-      const response = await axios.get("http://127.0.0.1:8000/list-recordings/");
+      const response = await axios.get("http://65.0.95.155:8000/list-recordings/");
       setS3Files(response.data.files || []);
       setShowS3Card(true);
     } catch (err) {
@@ -126,6 +214,7 @@ const HomePage = () => {
     setProcessingS3Files(true);
     setError("");
     setS3Results(null);
+    setS3TaskStatus(null);
 
     try {
       console.log("Selected files:", selectedS3Files);
@@ -135,7 +224,7 @@ const HomePage = () => {
       console.log("Sending direct array payload:", JSON.stringify(payload, null, 2));
 
       const response = await axios.post(
-        "http://127.0.0.1:8000/process-selected-recordings/",
+        "http://65.0.95.155:8000/process-selected-recordings/",
         payload,
         {
           headers: { 
@@ -145,13 +234,16 @@ const HomePage = () => {
         }
       );
       
-      console.log("✅ Backend response received:", response.data);
+      console.log("✅ S3 Backend response received:", response.data);
       
-      // Just set a simple success flag instead of full results
-      setS3Results({ status: "completed" });
+      // Get task ID and start polling for S3
+      const taskId = response.data.task_id;
+      setS3TaskId(taskId);
+      startS3Polling(taskId);
       
     } catch (err) {
       console.error("❌ Error processing S3 files:", err);
+      setProcessingS3Files(false);
       
       if (err.response) {
         console.error("📊 Response status:", err.response.status);
@@ -175,10 +267,20 @@ const HomePage = () => {
       } else {
         setError(`❌ Request failed: ${err.message}`);
       }
-    } finally {
-      setProcessingS3Files(false);
     }
   };
+
+  // Clean up polling on component unmount
+  useEffect(() => {
+    return () => {
+      if (uploadPollingInterval) {
+        clearInterval(uploadPollingInterval);
+      }
+      if (s3PollingInterval) {
+        clearInterval(s3PollingInterval);
+      }
+    };
+  }, [uploadPollingInterval, s3PollingInterval]);
 
   // Format file type badge
   const getFileTypeBadge = (fileName) => {
@@ -189,6 +291,50 @@ const HomePage = () => {
       // return <span className="bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full"></span>;
     }
     // return <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded-full"></span>;
+  };
+
+  // Format progress percentage - UPLOAD
+  const getUploadProgressPercentage = () => {
+    if (!uploadTaskStatus) return 0;
+    return uploadTaskStatus.progress || 0;
+  };
+
+  // Format progress percentage - S3
+  const getS3ProgressPercentage = () => {
+    if (!s3TaskStatus) return 0;
+    return s3TaskStatus.progress || 0;
+  };
+
+  // Get current processing status message - UPLOAD
+  const getUploadStatusMessage = () => {
+    if (!uploadTaskStatus) return "Starting processing...";
+    
+    switch (uploadTaskStatus.status) {
+      case "processing":
+        return `Upload Processing... ${getUploadProgressPercentage()}% complete`;
+      case "completed":
+        return "Upload Processing completed successfully";
+      case "error":
+        return "Upload Processing failed";
+      default:
+        return "Upload Processing...";
+    }
+  };
+
+  // Get current processing status message - S3
+  const getS3StatusMessage = () => {
+    if (!s3TaskStatus) return "Starting processing...";
+    
+    switch (s3TaskStatus.status) {
+      case "processing":
+        return `S3 Processing... ${getS3ProgressPercentage()}% complete`;
+      case "completed":
+        return "S3 Processing completed successfully";
+      case "error":
+        return "S3 Processing failed";
+      default:
+        return "S3 Processing...";
+    }
   };
 
   return (
@@ -310,6 +456,8 @@ const HomePage = () => {
               </div>
             )}
 
+          
+
             {/* Upload Button */}
             <button
               onClick={handleUpload}
@@ -348,11 +496,11 @@ const HomePage = () => {
                           ✅ {res.call_id}
                         </h3>
                         <p className="text-xs text-gray-700">
-                          Duration: {res.call_duration}s
+                          Duration: {res.duration_used} minutes
                         </p>
-                        {res.transcription?.transcript && (
+                        {res.transcript && (
                           <p className="text-xs text-gray-600 mt-1">
-                            {res.transcription.transcript.slice(0, 80)}...
+                            {res.transcript.slice(0, 80)}...
                           </p>
                         )}
                       </>
@@ -465,6 +613,48 @@ const HomePage = () => {
                   )}
                 </div>
 
+                {/* S3 Real-time Progress Display */}
+                {s3TaskStatus && (
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-blue-800">
+                        {getS3StatusMessage()}
+                      </span>
+                      <span className="text-sm text-blue-600">
+                        {getS3ProgressPercentage()}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-blue-200 rounded-full h-2">
+                      <div 
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                        style={{ width: `${getS3ProgressPercentage()}%` }}
+                      ></div>
+                    </div>
+                    {s3TaskStatus.processed_files && s3TaskStatus.total_files && (
+                      <p className="text-xs text-blue-600 mt-2">
+                        Processed {s3TaskStatus.processed_files} of {s3TaskStatus.total_files} files
+                      </p>
+                    )}
+                    {s3TaskStatus.file_status && (
+                      <div className="mt-2 max-h-20 overflow-y-auto">
+                        {Object.entries(s3TaskStatus.file_status).map(([filename, status]) => (
+                          <div key={filename} className="flex items-center text-xs">
+                            <span className="text-gray-600 truncate flex-1">{filename}</span>
+                            <span className={`ml-2 ${
+                              status === 'completed' ? 'text-green-600' :
+                              status === 'processing' ? 'text-blue-600' :
+                              status.startsWith('error') ? 'text-red-600' :
+                              'text-gray-600'
+                            }`}>
+                              {status}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Process Button */}
                 {s3Files.length > 0 && (
                   <button
@@ -487,18 +677,20 @@ const HomePage = () => {
                   </button>
                 )}
 
-                {/* S3 Processing Results - SIMPLIFIED: Only shows "Processing Complete" */}
-                {s3Results && (
-                  <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-xl text-center">
-                    <h3 className="font-semibold text-green-800 text-sm mb-1 flex items-center justify-center gap-1">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      Processing Complete
-                    </h3>
-                    <p className="text-xs text-green-600">
-                      Your files have been processed successfully.
-                    </p>
+                {/* S3 Processing Results */}
+                {s3Results && s3Results.status === "completed" && (
+                  <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-xl">
+                 
+                    {s3Results.results && s3Results.results.length > 0 && (
+                      <div className="max-h-40 overflow-y-auto space-y-2">
+                        {s3Results.results.map((result, index) => (
+                          <div key={index} className="p-2 bg-green-100 rounded text-xs">
+                            <p className="font-medium text-green-800">✅ {result.file_name}</p>
+                            <p className="text-green-700">Duration: {result.duration_used} minutes</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

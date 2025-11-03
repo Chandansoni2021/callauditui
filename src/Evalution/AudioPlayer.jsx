@@ -38,7 +38,7 @@ const AudioPlayer = ({ call_id }) => {
  
         // Parallel API calls for audio and markers
         const [audioResponse, markersResponse] = await Promise.all([
-          fetch("http://127.0.0.1:8000/get-audio", {
+          fetch("http://65.0.95.155:8000/get-audio", {
             method: "POST",
             body: (() => {
               const formData = new FormData();
@@ -46,7 +46,7 @@ const AudioPlayer = ({ call_id }) => {
               return formData;
             })(),
           }),
-          fetch(`http://127.0.0.1:8000/get-s3-uri/${call_id}`)
+          fetch(`http://65.0.95.155:8000/get-s3-uri/${call_id}`)
         ]);
  
         if (!audioResponse.ok) throw new Error("Failed to fetch audio");

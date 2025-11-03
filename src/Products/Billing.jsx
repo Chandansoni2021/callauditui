@@ -18,7 +18,7 @@ const Billing = ({ isSidebarCollapsed }) => {
     const fetchQuotaData = async () => {
       try {
         setLoading(true);
-        const response = await fetch('http://127.0.0.1:8000/quota-summary-with-history/frankfinn?include_history=true', {
+        const response = await fetch('http://65.0.95.155:8000/quota-summary-with-history/frankfinn?include_history=true', {
           method: 'GET',
           headers: {
             'accept': 'application/json'

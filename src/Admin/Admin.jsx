@@ -20,7 +20,7 @@ const Admin = ({ isSidebarOpen, isSidebarCollapsed }) => {
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        const response = await fetch("http://127.0.0.1:8000/frankfinn-dashboard");
+        const response = await fetch("http://65.0.95.155:8000/frankfinn-dashboard");
         const data = await response.json();
         if (data.success) {
           setDashboardData(data.data);
@@ -36,7 +36,7 @@ const Admin = ({ isSidebarOpen, isSidebarCollapsed }) => {
  
     const fetchAgentPerformance = async () => {
       try {
-        const response = await fetch("http://127.0.0.1:8000/get-all-agents-performance");
+        const response = await fetch("http://65.0.95.155:8000/get-all-agents-performance");
         const data = await response.json();
         if (data.success) {
           setAgentPerformance(data);
@@ -58,7 +58,7 @@ const Admin = ({ isSidebarOpen, isSidebarCollapsed }) => {
  
     setLoadingStudents(true);
     try {
-      const response = await fetch("http://127.0.0.1:8000/get-student-names");
+      const response = await fetch("http://65.0.95.155:8000/get-student-names");
       const result = await response.json();
      
       if (result.success) {
@@ -78,7 +78,7 @@ const Admin = ({ isSidebarOpen, isSidebarCollapsed }) => {
   const fetchAgentDetail = async (agentName) => {
     setLoadingAgentDetail(true);
     try {
-      const response = await fetch(`http://127.0.0.1:8000/get-agent-performance/${agentName}`);
+      const response = await fetch(`http://65.0.95.155:8000/get-agent-performance/${agentName}`);
       const result = await response.json();
      
       if (result.success) {

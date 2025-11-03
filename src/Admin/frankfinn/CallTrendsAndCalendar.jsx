@@ -11,7 +11,7 @@ import axios from "axios";
 import {
   TrendingUp, Calendar as CalendarIcon
 } from 'lucide-react';
- 
+
 const CallTrendsAndCalendar = ({ dashboardData }) => {
   const [callTrendsData, setCallTrendsData] = useState(null);
   const [timeFilter, setTimeFilter] = useState('daily');
@@ -19,67 +19,199 @@ const CallTrendsAndCalendar = ({ dashboardData }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const calendarRef = useRef(null);
- 
-  // Updated color scheme for calendar events - PENDING KO GREEN KAR DIYA
+
+  // Updated color scheme for calendar events
   const statusConfig = {
-    "Completed": { color: "#059669" },    // Green - for completed follow-ups
-    "Overdue": { color: "#dc2626" },      // Red - for past overdue follow-ups
-    "Pending": { color: "#10b981" },      // Green - for upcoming calls (CHANGED FROM BLUE TO GREEN)
-    "Today": { color: "#f59e0b" }         // Yellow - for today's follow-ups
+    "Completed": { color: "#059669" },
+    "Overdue": { color: "#dc2626" },
+    "Pending": { color: "#10b981" },
+    "Today": { color: "#f59e0b" }
   };
- 
-  // Fetch call trends data
+
+  // Fetch call trends data from backend
   useEffect(() => {
     const fetchCallTrends = async () => {
       try {
-        const response = await fetch("http://127.0.0.1:8000/frankfinn-dashboard");
+        const response = await fetch("http://65.0.95.155:8000/frankfinn-dashboard");
         const data = await response.json();
        
         if (data.success) {
-          setCallTrendsData(data.data?.call_trends || {
-            monthly: [
-              { month: 'Jan', calls: 4500, completed: 3200, incomplete: 1300 },
-              { month: 'Feb', calls: 5200, completed: 3800, incomplete: 1400 },
-              { month: 'Mar', calls: 4800, completed: 3500, incomplete: 1300 },
-              { month: 'Apr', calls: 5500, completed: 4200, incomplete: 1300 },
-            ],
-            daily: [
-              { date: 'Mon', calls: 300, completed: 200, incomplete: 100 },
-              { date: 'Tue', calls: 450, completed: 350, incomplete: 100 },
-              { date: 'Wed', calls: 400, completed: 300, incomplete: 100 },
-              { date: 'Thu', calls: 500, completed: 400, incomplete: 100 },
-              { date: 'Fri', calls: 350, completed: 250, incomplete: 100 },
-              { date: 'Sat', calls: 200, completed: 150, incomplete: 50 },
-              { date: 'Sun', calls: 150, completed: 100, incomplete: 50 },
-            ]
-          });
+          console.log("Backend call trends data:", data.data.call_trends);
+          setCallTrendsData(data.data.call_trends);
         } else {
           throw new Error("Failed to load call trends data");
         }
       } catch (err) {
         console.error("Error fetching call trends:", err);
+        // Fallback data with more dates for better weekly view
         setCallTrendsData({
-          monthly: [
-            { month: 'Jan', calls: 4500, completed: 3200, incomplete: 1300 },
-            { month: 'Feb', calls: 5200, completed: 3800, incomplete: 1400 }
-          ],
           daily: [
-            { date: 'Mon', calls: 300, completed: 200, incomplete: 100 },
-            { date: 'Tue', calls: 450, completed: 350, incomplete: 100 }
+            { date: '2025-11-02', calls: 3, completed: 3, incomplete: 0, completion_rate: 100 },
+            { date: '2025-11-07', calls: 1, completed: 1, incomplete: 0, completion_rate: 100 },
+            { date: '2025-11-15', calls: 2, completed: 2, incomplete: 0, completion_rate: 100 },
+            { date: '2025-11-20', calls: 1, completed: 1, incomplete: 0, completion_rate: 100 },
+            { date: '2025-11-25', calls: 3, completed: 2, incomplete: 1, completion_rate: 67 },
+            { date: '2025-12-08', calls: 1, completed: 1, incomplete: 0, completion_rate: 100 }
           ]
         });
       }
     };
- 
+
     fetchCallTrends();
   }, []);
- 
+
+  // Get week number and month for a date
+  const getWeekInfo = (date) => {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    
+    // Get first day of month
+    const firstDayOfMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+    
+    // Get week number within month (1-6)
+    const firstDay = firstDayOfMonth.getDay(); // 0 (Sunday) to 6 (Saturday)
+    const dateOfMonth = d.getDate();
+    
+    // Calculate week number in month
+    const weekNumber = Math.ceil((dateOfMonth + firstDay) / 7);
+    
+    return {
+      weekNumber,
+      month: d.getMonth(),
+      year: d.getFullYear(),
+      monthName: d.toLocaleDateString('en-US', { month: 'long' })
+    };
+  };
+
+  // Calculate weekly data from daily data - MONTH-WISE WEEKLY DATA
+  const calculateWeeklyData = (dailyData) => {
+    if (!dailyData || dailyData.length === 0) return [];
+
+    const weeklyMap = {};
+    
+    dailyData.forEach(day => {
+      const weekInfo = getWeekInfo(day.date);
+      const weekKey = `${weekInfo.year}-${weekInfo.month}-W${weekInfo.weekNumber}`;
+      
+      if (!weeklyMap[weekKey]) {
+        weeklyMap[weekKey] = {
+          weekKey: weekKey,
+          weekNumber: weekInfo.weekNumber,
+          month: weekInfo.month,
+          year: weekInfo.year,
+          monthName: weekInfo.monthName,
+          displayName: `${weekInfo.monthName} Week ${weekInfo.weekNumber}`,
+          calls: 0,
+          completed: 0,
+          incomplete: 0,
+          completion_rate: 0
+        };
+      }
+      
+      weeklyMap[weekKey].calls += day.calls;
+      weeklyMap[weekKey].completed += day.completed;
+      weeklyMap[weekKey].incomplete += day.incomplete;
+    });
+    
+    // Calculate completion rate for each week
+    Object.values(weeklyMap).forEach(week => {
+      week.completion_rate = week.calls > 0 ? Math.round((week.completed / week.calls) * 100) : 0;
+    });
+    
+    // Sort by year, month, week number
+    return Object.values(weeklyMap).sort((a, b) => {
+      if (a.year !== b.year) return a.year - b.year;
+      if (a.month !== b.month) return a.month - b.month;
+      return a.weekNumber - b.weekNumber;
+    });
+  };
+
+  // Calculate monthly data from daily data
+  const calculateMonthlyData = (dailyData) => {
+    if (!dailyData || dailyData.length === 0) return [];
+
+    const monthlyMap = {};
+    
+    dailyData.forEach(day => {
+      const date = new Date(day.date);
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const monthName = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+      
+      if (!monthlyMap[monthKey]) {
+        monthlyMap[monthKey] = {
+          month: monthKey,
+          monthName: monthName,
+          calls: 0,
+          completed: 0,
+          incomplete: 0,
+          completion_rate: 0
+        };
+      }
+      
+      monthlyMap[monthKey].calls += day.calls;
+      monthlyMap[monthKey].completed += day.completed;
+      monthlyMap[monthKey].incomplete += day.incomplete;
+    });
+    
+    // Calculate completion rate for each month
+    Object.values(monthlyMap).forEach(month => {
+      month.completion_rate = month.calls > 0 ? Math.round((month.completed / month.calls) * 100) : 0;
+    });
+    
+    return Object.values(monthlyMap).sort((a, b) => a.month.localeCompare(b.month));
+  };
+
+  // Format date for display
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  };
+
+  // Process data for charts based on time filter
+  const getProcessedData = () => {
+    if (!callTrendsData || !callTrendsData.daily) return [];
+
+    const dailyData = callTrendsData.daily;
+    
+    if (timeFilter === 'daily') {
+      return dailyData.map(item => ({
+        ...item,
+        displayDate: formatDate(item.date),
+        date: item.date
+      })).sort((a, b) => new Date(a.date) - new Date(b.date));
+    }
+    
+    if (timeFilter === 'weekly') {
+      const weeklyData = calculateWeeklyData(dailyData);
+      return weeklyData.map(item => ({
+        ...item,
+        displayDate: `Week ${item.weekNumber}`,
+        date: item.weekKey,
+        fullDisplayName: item.displayName
+      }));
+    }
+    
+    if (timeFilter === 'monthly') {
+      const monthlyData = calculateMonthlyData(dailyData);
+      return monthlyData.map(item => ({
+        ...item,
+        displayDate: item.monthName,
+        date: item.month
+      }));
+    }
+    
+    return [];
+  };
+
   // Fetch follow-up data from backend for calendar
   useEffect(() => {
     const fetchFollowUps = async () => {
       try {
         setLoading(true);
-        const response = await axios.get("http://127.0.0.1:8000/followups");
+        const response = await axios.get("http://65.0.95.155:8000/followups");
        
         if (response.data.success) {
           const followUps = response.data.data;
@@ -98,7 +230,7 @@ const CallTrendsAndCalendar = ({ dashboardData }) => {
               } else if (followUpDate < today) {
                 status = "Overdue";
               }
- 
+
               return {
                 id: fu.call_id,
                 title: fu.purpose_of_follow_up !== "not provided"
@@ -113,7 +245,7 @@ const CallTrendsAndCalendar = ({ dashboardData }) => {
                   callId: fu.call_id,
                   nextPlan: fu.next_plan
                 },
-                color: statusConfig[status]?.color || "#10b981", // Default bhi green kar diya
+                color: statusConfig[status]?.color || "#10b981",
                 textColor: "#ffffff"
               };
             });
@@ -159,7 +291,7 @@ const CallTrendsAndCalendar = ({ dashboardData }) => {
               customer: "Priya Patel",
               callId: "DEMO002"
             },
-            color: statusConfig["Pending"].color, // Ab ye green hoga
+            color: statusConfig["Pending"].color,
             textColor: "#ffffff"
           },
           {
@@ -181,19 +313,19 @@ const CallTrendsAndCalendar = ({ dashboardData }) => {
         setLoading(false);
       }
     };
- 
+
     fetchFollowUps();
   }, []);
- 
+
   const handleDateClick = (info) => {
     alert(`Selected Date: ${info.dateStr}\n\nBackend integration ke through follow-up manage hoga.`);
   };
- 
+
   const handleEventClick = (info) => {
     const event = info.event;
     const eventDetails = `
 Follow-up Details:
- 
+
 Purpose: ${event.title}
 Customer: ${event.extendedProps.customer}
 Call ID: ${event.extendedProps.callId}
@@ -203,7 +335,7 @@ Next Plan: ${event.extendedProps.nextPlan || "No specific plan"}
     `;
     alert(eventDetails);
   };
- 
+
   const renderEventContent = (eventInfo) => {
     return (
       <div className="p-1">
@@ -216,7 +348,7 @@ Next Plan: ${event.extendedProps.nextPlan || "No specific plan"}
       </div>
     );
   };
- 
+
   // Function to style today's date cell
   const dayCellClassNames = (info) => {
     const today = new Date();
@@ -230,34 +362,121 @@ Next Plan: ${event.extendedProps.nextPlan || "No specific plan"}
     }
     return [];
   };
- 
+
   const CallTrends = () => {
-    const trends = callTrendsData || {
-      monthly: [],
-      daily: []
-    };
- 
-    const chartData = trends[timeFilter] || [];
+    const chartData = getProcessedData();
+    
     const totalCalls = chartData.reduce((sum, d) => sum + d.calls, 0);
     const totalCompleted = chartData.reduce((sum, d) => sum + d.completed, 0);
     const totalIncomplete = chartData.reduce((sum, d) => sum + d.incomplete, 0);
- 
+    const overallCompletionRate = totalCalls > 0 ? Math.round((totalCompleted / totalCalls) * 100) : 0;
+
     const CustomTooltip = ({ active, payload, label }) => {
       if (active && payload && payload.length) {
+        const data = payload[0]?.payload;
         return (
           <div className="bg-white p-3 rounded-lg shadow-lg border border-gray-200">
-            <p className="font-semibold text-gray-800 mb-1">{label}</p>
+            <p className="font-semibold text-gray-800 mb-1">
+              {timeFilter === 'weekly' && data?.fullDisplayName ? data.fullDisplayName : label}
+            </p>
             {payload.map((entry, index) => (
               <p key={index} className="text-xs" style={{ color: entry.color }}>
                 {entry.name}: {entry.value}
               </p>
             ))}
+            <p className="text-xs text-green-600 mt-1 font-semibold">
+              Completion Rate: {data?.completion_rate || 0}%
+            </p>
           </div>
         );
       }
       return null;
     };
- 
+
+    // Choose the right chart based on time filter
+    const renderChart = () => {
+      if (chartData.length === 0) {
+        return (
+          <div className="flex items-center justify-center h-48 text-gray-500">
+            No data available for {timeFilter} call trends
+          </div>
+        );
+      }
+
+      if (timeFilter === 'monthly' && chartData.length > 1) {
+        return (
+          <BarChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis 
+              dataKey="displayDate" 
+              stroke="#6b7280" 
+              fontSize={10} 
+            />
+            <YAxis stroke="#6b7280" fontSize={10} />
+            <Tooltip content={<CustomTooltip />} />
+            <Bar dataKey="calls" fill="#3b82f6" name="Total Calls" radius={[2, 2, 0, 0]} />
+            <Bar dataKey="completed" fill="#10b981" name="Completed" radius={[2, 2, 0, 0]} />
+            <Bar dataKey="incomplete" fill="#ef4444" name="Incomplete" radius={[2, 2, 0, 0]} />
+          </BarChart>
+        );
+      } else {
+        return (
+          <LineChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis 
+              dataKey="displayDate" 
+              stroke="#6b7280" 
+              fontSize={10} 
+            />
+            <YAxis stroke="#6b7280" fontSize={10} />
+            <Tooltip content={<CustomTooltip />} />
+            <Line 
+              type="monotone" 
+              dataKey="calls" 
+              stroke="#3b82f6" 
+              name="Total Calls" 
+              strokeWidth={2} 
+              dot={{ r: 4 }} 
+              activeDot={{ r: 6 }}
+            />
+            <Line 
+              type="monotone" 
+              dataKey="completed" 
+              stroke="#10b981" 
+              name="Completed" 
+              strokeWidth={2} 
+              dot={{ r: 3 }} 
+              activeDot={{ r: 5 }}
+            />
+            <Line 
+              type="monotone" 
+              dataKey="incomplete" 
+              stroke="#ef4444" 
+              name="Incomplete" 
+              strokeWidth={2} 
+              dot={{ r: 3 }} 
+              activeDot={{ r: 5 }}
+            />
+          </LineChart>
+        );
+      }
+    };
+
+    // Get current month's weekly data for display
+    const getCurrentMonthWeeks = () => {
+      if (timeFilter !== 'weekly') return null;
+      
+      const weeklyData = calculateWeeklyData(callTrendsData?.daily || []);
+      const currentMonth = new Date().getMonth();
+      const currentYear = new Date().getFullYear();
+      
+      return weeklyData.filter(week => 
+        week.month === currentMonth && week.year === currentYear
+      );
+    };
+
+    const currentMonthWeeks = getCurrentMonthWeeks();
+
     return (
       <div className="h-full">
         <div className="flex items-center justify-between mb-4">
@@ -275,6 +494,14 @@ Next Plan: ${event.extendedProps.nextPlan || "No specific plan"}
               Daily
             </button>
             <button
+              onClick={() => setTimeFilter('weekly')}
+              className={`px-2 py-1 rounded text-xs font-medium ${
+                timeFilter === 'weekly' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Weekly
+            </button>
+            <button
               onClick={() => setTimeFilter('monthly')}
               className={`px-2 py-1 rounded text-xs font-medium ${
                 timeFilter === 'monthly' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -284,9 +511,9 @@ Next Plan: ${event.extendedProps.nextPlan || "No specific plan"}
             </button>
           </div>
         </div>
- 
-        <div className="grid grid-cols-3 gap-2 mb-4">
-          <div className="bg-blue-50 p-2 rounded-lg border border-blue-200">
+
+        <div className="grid grid-cols-4 gap-2 mb-4">
+          {/* <div className="bg-blue-50 p-2 rounded-lg border border-blue-200">
             <p className="text-xs font-medium text-blue-600">Total Calls</p>
             <p className="text-lg font-bold text-gray-800">{totalCalls}</p>
           </div>
@@ -298,37 +525,48 @@ Next Plan: ${event.extendedProps.nextPlan || "No specific plan"}
             <p className="text-xs font-medium text-red-600">Incomplete</p>
             <p className="text-lg font-bold text-gray-800">{totalIncomplete}</p>
           </div>
+          <div className="bg-purple-50 p-2 rounded-lg border border-purple-200">
+            <p className="text-xs font-medium text-purple-600">Completion Rate</p>
+            <p className="text-lg font-bold text-gray-800">{overallCompletionRate}%</p>
+          </div> */}
         </div>
- 
+
+        {/* Current Month Weekly Summary - Only show for weekly view */}
+        {timeFilter === 'weekly' && currentMonthWeeks && currentMonthWeeks.length > 0 && (
+          <div className="mt-4 mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+            <h4 className="text-sm font-semibold text-gray-700 mb-2">
+              {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} - Week-wise Summary
+            </h4>
+            <div className="grid grid-cols-5 gap-1">
+              {currentMonthWeeks.map(week => (
+                <div key={week.weekKey} className="text-center p-1 bg-white rounded border">
+                  <p className="text-xs font-semibold text-gray-600">Week {week.weekNumber}</p>
+                  <p className="text-lg font-bold text-blue-600">{week.calls}</p>
+                  <p className="text-xs text-green-600">{week.completion_rate}%</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="h-48">
           <ResponsiveContainer width="100%" height="100%">
-            {timeFilter === 'monthly' ? (
-              <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="month" stroke="#6b7280" fontSize={10} />
-                <YAxis stroke="#6b7280" fontSize={10} />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="calls" fill="#3b82f6" name="Total Calls" radius={[2, 2, 0, 0]} />
-                <Bar dataKey="completed" fill="#10b981" name="Completed" radius={[2, 2, 0, 0]} />
-                <Bar dataKey="incomplete" fill="#ef4444" name="Incomplete" radius={[2, 2, 0, 0]} />
-              </BarChart>
-            ) : (
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="date" stroke="#6b7280" fontSize={10} />
-                <YAxis stroke="#6b7280" fontSize={10} />
-                <Tooltip content={<CustomTooltip />} />
-                <Line type="monotone" dataKey="calls" stroke="#3b82f6" name="Total Calls" strokeWidth={2} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="completed" stroke="#10b981" name="Completed" strokeWidth={2} dot={{ r: 2 }} />
-                <Line type="monotone" dataKey="incomplete" stroke="#ef4444" name="Incomplete" strokeWidth={2} dot={{ r: 2 }} />
-              </LineChart>
-            )}
+            {renderChart()}
           </ResponsiveContainer>
+        </div>
+
+        {/* Data summary */}
+        <div className="mt-2 text-xs text-gray-600 text-center">
+          Showing {chartData.length} {timeFilter} record(s) • 
+          Overall Completion: {overallCompletionRate}%
+          {timeFilter === 'weekly' && currentMonthWeeks && (
+            <span> • {currentMonthWeeks.length} weeks in current month</span>
+          )}
         </div>
       </div>
     );
   };
- 
+
   const CalendarComponent = () => {
     if (loading) {
       return (
@@ -338,7 +576,7 @@ Next Plan: ${event.extendedProps.nextPlan || "No specific plan"}
         </div>
       );
     }
- 
+
     return (
       <div className="h-full">
         <div className="flex items-center justify-between mb-4">
@@ -350,7 +588,7 @@ Next Plan: ${event.extendedProps.nextPlan || "No specific plan"}
             {events.length} follow-up(s) scheduled
           </p>
         </div>
- 
+
         {error && (
           <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-2 rounded-lg mb-3 text-xs">
             <div className="flex items-center">
@@ -359,7 +597,7 @@ Next Plan: ${event.extendedProps.nextPlan || "No specific plan"}
             </div>
           </div>
         )}
- 
+
         <div className="bg-white rounded-lg border border-gray-200">
           <FullCalendar
             ref={calendarRef}
@@ -398,16 +636,16 @@ Next Plan: ${event.extendedProps.nextPlan || "No specific plan"}
             dayCellClassNames={dayCellClassNames}
           />
         </div>
- 
-        {/* LEGEND UPDATE KAR DIYA - PENDING KO GREEN DIKHAYEGA */}
+
+        {/* LEGEND */}
         <div className="mt-3 flex justify-center space-x-4 text-xs">
           <div className="flex items-center space-x-1">
             <div className="w-3 h-3 bg-yellow-500 rounded"></div>
             <span className="text-gray-700">Today</span>
           </div>
           <div className="flex items-center space-x-1">
-            <div className="w-3 h-3 bg-green-600 rounded"></div> {/* Yahan blue ki jagah green */}
-            <span className="text-gray-700">Upcoming</span> {/* Pending ki jagah Upcoming */}
+            <div className="w-3 h-3 bg-green-600 rounded"></div>
+            <span className="text-gray-700">Upcoming</span>
           </div>
           <div className="flex items-center space-x-1">
             <div className="w-3 h-3 bg-red-600 rounded"></div>
@@ -417,7 +655,7 @@ Next Plan: ${event.extendedProps.nextPlan || "No specific plan"}
       </div>
     );
   };
- 
+
   return (
     <div className="flex gap-7">
       <div className="flex-1 bg-white rounded-xl shadow-lg p-4">
@@ -430,6 +668,5 @@ Next Plan: ${event.extendedProps.nextPlan || "No specific plan"}
     </div>
   );
 };
- 
+
 export default CallTrendsAndCalendar;
- 

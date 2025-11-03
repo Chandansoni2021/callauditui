@@ -81,7 +81,7 @@ const Navbar = ({
       const refreshToken = localStorage.getItem("refresh_token");
 
       if (accessToken && refreshToken) {
-        await fetch("http://127.0.0.1:8000/logout", {
+        await fetch("http://65.0.95.155:8000/logout", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${accessToken}`,

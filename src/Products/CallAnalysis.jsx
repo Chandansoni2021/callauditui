@@ -49,13 +49,13 @@ const CallAnalysis = ({ isSidebarCollapsed }) => {
     fetchCallAudit();
   }, []);
 
-  // Fetch call audit data - UPDATED WITH PROPER PHONE NUMBER EXTRACTION
+  // Fetch call audit data - UPDATED TO USE DIRECT TotalScore FROM BACKEND
   const fetchCallAudit = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const response = await axios.get("http://127.0.0.1:8000/fetch_all_analysis_details");
+      const response = await axios.get("http://65.0.95.155:8000/fetch_all_analysis_details");
       console.log("API Response:", response.data);
 
       if (!response.data) {
@@ -64,12 +64,10 @@ const CallAnalysis = ({ isSidebarCollapsed }) => {
 
       const callAuditDetails = response.data.call_audit_details || [];
       const callDataArray = callAuditDetails.map(callDetails => {
-        const auditParams = callDetails.Audit_Parameters || {};
-        const yesCount = Object.values(auditParams).filter(val => val === 'Yes').length;
-        const totalParams = Object.values(auditParams).length;
-        const calculatedScore = totalParams > 0 ? Math.round((yesCount / totalParams) * 10) : 0;
+        // Use the TotalScore directly from backend response
+        const totalScore = callDetails.TotalScore !== undefined ? callDetails.TotalScore : 0;
 
-        // UPDATED: Extract phone numbers from Phone_Numbers array
+        // Extract phone numbers from Phone_Numbers array
         const extractPhoneNumbers = () => {
           const phoneNumbers = callDetails.Call_Metadata?.Phone_Numbers;
           
@@ -143,11 +141,13 @@ const CallAnalysis = ({ isSidebarCollapsed }) => {
           appointment_center_address_provided: callDetails.Audit_Parameters?.Appointment_Center_Address_Provided || "No",
          
           // Call Status
-          call_disconnected: callDetails.Call_Status?.Call_Disconnected === "False" ? "No" : "Yes",
-          call_completion_status: callDetails.Call_Status?.Call_Completion_Status === "True" ? "Complete" : "Incomplete",
+          call_disconnected: callDetails.Call_Status?.Call_Disconnected === false || 
+                             callDetails.Call_Status?.Call_Disconnected === "False" ? "No" : "Yes",
+          call_completion_status: callDetails.Call_Status?.Call_Completion_Status === true || 
+                       callDetails.Call_Status?.Call_Completion_Status === "True" ? "Complete" : "Incomplete",
          
-          // Score
-          total_score: calculatedScore,
+          // Score - USING DIRECT TotalScore FROM BACKEND
+          total_score: totalScore,
          
           rawData: callDetails
         };
@@ -318,7 +318,7 @@ const CallAnalysis = ({ isSidebarCollapsed }) => {
 
     setIsSendingReport(true);
     try {
-      const response = await fetch("http://127.0.0.1:8000/send-email/", {
+      const response = await fetch("http://65.0.95.155:8000/send-email/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -372,7 +372,7 @@ const CallAnalysis = ({ isSidebarCollapsed }) => {
     agent: "Name of the agent who handled the call",
     student: "Name of the student/customer",
     phone: "Contact number of the student",
-    date: "Date when the call was conducted",
+    date: "Date when the call was uploaded",
     dob: "Student's date of birth for eligibility verification",
     qualification: "Student's educational qualification and stream",
     eligible: "Whether the student meets eligibility criteria",
@@ -719,7 +719,7 @@ const CallAnalysis = ({ isSidebarCollapsed }) => {
                   <option value="consultant_name">👨‍💼 Agent Name</option>
                   <option value="student_name">👤 Student Name</option>
                   <option value="phone_no">📱 Contact Number</option>
-                  <option value="date_of_call">📅 Call Date</option>
+                  <option value="date_of_call">📅 Call Upload Date</option>
                   <option value="dob">🎂 Date of Birth</option>
                   <option value="qualification_stream">🎓 Qualification</option>
                 </select>
@@ -772,7 +772,7 @@ const CallAnalysis = ({ isSidebarCollapsed }) => {
                 Date Range
               </button>
 
-              <button
+              {/* <button
                 onClick={() => setShowFilters(!showFilters)}
                 className={`flex items-center gap-2 px-4 py-3 rounded-lg transition-colors duration-300 ${
                   showFilters 
@@ -782,7 +782,7 @@ const CallAnalysis = ({ isSidebarCollapsed }) => {
               >
                 <FaFilter />
                 More Filters
-              </button>
+              </button> */}
             </div>
           </div>
 
@@ -975,7 +975,7 @@ const CallAnalysis = ({ isSidebarCollapsed }) => {
                     >
                       <div className="flex items-center gap-2 text-gray-700 font-semibold">
                         <FaCalendar className="text-red-500" />
-                        Call Date
+                        Call Upload Date
                         <FaSort className="text-gray-400" />
                       </div>
                     </th>

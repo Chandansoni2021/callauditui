@@ -32,7 +32,7 @@ const CallTrendsAndCalendar = ({ dashboardData }) => {
   useEffect(() => {
     const fetchCallTrends = async () => {
       try {
-        const response = await fetch("http://65.0.95.155:8000/frankfinn-dashboard");
+        const response = await fetch("https://mersols.com/frankfinn-dashboard");
         const data = await response.json();
        
         if (data.success) {
@@ -211,7 +211,7 @@ const CallTrendsAndCalendar = ({ dashboardData }) => {
     const fetchFollowUps = async () => {
       try {
         setLoading(true);
-        const response = await axios.get("http://65.0.95.155:8000/followups");
+        const response = await axios.get("https://mersols.com/followups");
        
         if (response.data.success) {
           const followUps = response.data.data;

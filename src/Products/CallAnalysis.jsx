@@ -55,7 +55,7 @@ const CallAnalysis = ({ isSidebarCollapsed }) => {
       setLoading(true);
       setError(null);
 
-      const response = await axios.get("http://65.0.95.155:8000/fetch_all_analysis_details");
+      const response = await axios.get("https://mersols.com/fetch_all_analysis_details");
       console.log("API Response:", response.data);
 
       if (!response.data) {
@@ -318,7 +318,7 @@ const CallAnalysis = ({ isSidebarCollapsed }) => {
 
     setIsSendingReport(true);
     try {
-      const response = await fetch("http://65.0.95.155:8000/send-email/", {
+      const response = await fetch("https://mersols.com/send-email/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

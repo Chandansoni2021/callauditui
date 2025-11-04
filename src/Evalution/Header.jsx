@@ -21,7 +21,7 @@
 //       }
  
 //       try {
-//         const response = await fetch("http://65.0.95.155:8000/header_fetch_details/", {
+//         const response = await fetch("https://mersols.com/header_fetch_details/", {
 //           method: "POST",
 //           headers: {
 //             "Content-Type": "application/x-www-form-urlencoded",

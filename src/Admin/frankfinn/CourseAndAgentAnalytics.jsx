@@ -23,7 +23,7 @@ const CourseAndAgentAnalytics = ({ dashboardData, agentPerformance }) => {
       try {
         setCourseLoading(true);
         setCourseError(false);
-        const response = await fetch("http://65.0.95.155:8000/frankfinn-dashboard");
+        const response = await fetch("https://mersols.com/frankfinn-dashboard");
         const data = await response.json();
       
         if (data.success) {

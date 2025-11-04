@@ -61,7 +61,7 @@ const HomePage = () => {
   // Fetch task status from backend
   const fetchTaskStatus = async (taskId) => {
     try {
-      const response = await axios.get(`http://65.0.95.155:8000/task-status/${taskId}`);
+      const response = await axios.get(`https://mersols.com/task-status/${taskId}`);
       return response.data;
     } catch (err) {
       console.error("Error fetching task status:", err);
@@ -147,7 +147,7 @@ const HomePage = () => {
 
     try {
       const res = await axios.post(
-        "http://65.0.95.155:8000/upload-audio-s3/",
+        "https://mersols.com/upload-audio-s3/",
         formData,
         {
           headers: { "Content-Type": "multipart/form-data" },
@@ -172,7 +172,7 @@ const HomePage = () => {
   const fetchS3Files = async () => {
     setLoadingS3Files(true);
     try {
-      const response = await axios.get("http://65.0.95.155:8000/list-recordings/");
+      const response = await axios.get("https://mersols.com/list-recordings/");
       setS3Files(response.data.files || []);
       setShowS3Card(true);
     } catch (err) {
@@ -224,7 +224,7 @@ const HomePage = () => {
       console.log("Sending direct array payload:", JSON.stringify(payload, null, 2));
 
       const response = await axios.post(
-        "http://65.0.95.155:8000/process-selected-recordings/",
+        "https://mersols.com/process-selected-recordings/",
         payload,
         {
           headers: { 

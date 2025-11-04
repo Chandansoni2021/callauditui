@@ -56,7 +56,7 @@ const UploadDocumentsPopup = () => {
     formData.append("file", file);
  
     try {
-      const response = await fetch("http://65.0.95.155:8000/upload/", {
+      const response = await fetch("https://mersols.com/upload/", {
         method: "POST",
         body: formData,
       });
